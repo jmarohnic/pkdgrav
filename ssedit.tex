@@ -1,0 +1,342 @@
+\input{preamble}
+
+\begin{document}
+
+\begin{flushleft}
+
+\huge{\code{ssedit.py}}\\
+\bigskip\bigskip
+\Large{Last Update 1/26/23}\\
+\bigskip\bigskip
+\large{Created by Julian C. Marohnic 1/26/23}\\
+
+\end{flushleft}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+\section{Introduction}
+
+\code{ssedit} is a utility thats aids in creating and manipulating \pkd{} \code{ss} files. It does not rely on any existing \pkd{} utilities, with the exception of \code{ssio.py}. Currently, \code{ssedit} has no interactivity built in, though this may change in the future. Given the way it is designed, \code{ssedit.py} is most easily used via an interactive Python session (invoked with \code{python -i ssedit.py}), or by importing \code{ssedit} into a Python script. This document contains an inventory of the classes, methods, and functions introduced in \code{ssedit}, as well as miscellaneous information about best practices and usage. \\
+
+\section{Classes}
+
+\code{ssedit} introduces two new classes: \code{Particle} and \code{Assembly}, hereafter "particles" and "assemblies." Particles in \code{ssedit} correspond to particles in \pkd{}, while assemblies correspond to any collection of zero or more particles. These two classes are the primary data structures used in \code{ssedit}.
+
+\subsection{Units}
+
+Particles and assemblies both have ``units" attributes. Legal unit settings are \code{`pkd'} (\pkd{} customary units), \code{`cgs'}, and \code{`mks'}. Units may be changed at will by the user, and the values contained in the relevant particle or assembly should be updated seamlessly. Changing the units of a particle will only update the data values for that particle, while changing the units of an assembly will update the units attribute of the assembly, as well as the units and data values for all of its constituent particles. \code{ssedit} makes use of a number of internal functions (described below) to effect unit changes, but users should always change particle units by simply setting the units attribute to the desired value.
+
+
+
+\subsection{Particles}
+Particles in \code{ssedit} have attributes corresponding to the standard \pkd{} particle fields, and an additional units attribute. The names of the attributes are as follows:
+
+\begin{verbatim}
+iOrder
+iOrgIdx
+m
+R
+x
+y
+z
+vx
+vy
+vz
+wx
+wy
+wz
+color
+units
+\end{verbatim}
+
+
+\noindent The \code{Particle} keyword will create a new particle object. For example:
+\begin{verbatim}
+Particle(0,0,10,100,1,0,0,5,0,0,0,0,0,5,`cgs')
+\end{verbatim}
+will create a new particle with iOrder 0, iOrgIdx 0, mass 10 g, radius 100 cm, $x$ position 1 cm, $y$ and $z$ positions 0, $x$ speed 5 cm/s, $y$ and $z$ speeds of 0, no spin, color yellow, and a `cgs' units tag. The `cgs' argument is the only way to specify the units of the input arguments, so it is crucial to specify this value. When initializing a new particle, iOrder, iOrgIdx, mass, and radius must be specified. Position, velocity, and spin all default to zero if not specified. Particle color will default to green, and units default to pkdgrav. Particle attributes can be read or written using the \code{<class instance>.<attribute>} syntax, e.g.:
+
+\begin{verbatim}
+>>> p1 = Particle(0,0,15,50,units=`cgs')
+>>> p1.m
+15.0
+>>> p1.m = 20
+>>> p1.m
+20.0
+>>> p1.units = `mks'
+>>> p1.m
+0.02
+\end{verbatim}
+
+
+\subsection{Assemblies}
+The \code{Assembly} class is derived from the Python \code{list} type, and shares many of its features. An assembly only has one attribute of its own, which is \code{units}. An assembly is a container for zero or more particles, though a list of particles on its own does \textit{not} constitute an assembly. An assembly can be created with the \code{Assembly} keyword. \code{Assembly()} expects to be called on an arbitrary number of particles, along with an optional units argument (the default being \pkd{} units). Note that calling \code{Assembly} on a list of particles will not work, but this can be circumvented by prepending the * operator to your list when creating the assembly. E.g.:
+
+\begin{verbatim}
+Assembly(particle1, particle2, ..., units=`cgs')
+
+OR
+
+Assembly(*[particle1, particle2, ...], units=`cgs')
+\end{verbatim}
+
+
+\noindent Assemblies support list-style slicing, though there are some subtleties to be noted here. Consider an assembly \code{a1} containing 10 particles. \code{a1[3]} will return the 4th particle in the assembly. The particle will not be removed from \code{a1}, but any manipulations made to this particle will be reflected in the 4th particle of \code{a1}. Contrast this with the \code{get\_particle()} assembly method, which will instead return a copy of the particle requested that exists independently of the original. Functions and methods in \code{ssedit} that deal with extracting particles from assemblies typically behave this way. Also, \code{get\_particle()} searches by iOrder value, while list slicing does not ``know" about iOrder values and will simply return the particle in the position requested. Both approaches may be useful in different circumstances. Assemblies are also iterable, so \code{ssedit} allows for things like the following:
+
+\begin{verbatim}
+to_be_deleted = [particle.iOrder for particle in a1 if particle.x > 1000]
+
+OR
+
+for particle in a1:
+    if particle.iOrgIdx < 0:
+        particle.set_vel((0,0,0))
+\end{verbatim}
+
+\section{Functions and Methods}
+
+Both particles and assemblies have a number of class methods associated with them that provide much, though not all, of the functionality in \code{ssedit}. Both particles and assemblies have a \code{print} function implemented, which may be used to display the entire contents of the object. In addition, there are a number of general functions, as well as some methods and functions that are not meant to be called by the user, but are used internally.
+
+\subsection{General Functions}
+
+\subsubsection{\code{ss\_in(filename, units=`pkd')}}
+Read in a \pkd{} \code{ss} file. This function makes use of the \code{read\_SS()} function from \code{ssio}, but returns an \code{ssedit} assembly structure. Units may be specified, with the default being \pkd{} units. The \code{filename} argument must be passed in as a string.
+
+\subsubsection{\code{ss\_out(assembly, filename)}}
+Write an assembly to an \code{ss} file. \code{ss\_out()} uses the \code{write\_SS()} function from \code{ssio}. When writing an assembly, units will be automatically converted to \pkd{} units by \code{ss\_out} before writing. \code{ss\_out()} will warn the user when attempting to write assemblies containing duplicate or non-sequential iOrder values. Since \code{ssio} will (reasonably) not respect this input, \code{ss\_out()} will in all cases make a copy of the assembly to be written and call the \code{sort\_iOrder()} method on it before passing it to \code{write\_SS()}. Calling \code{condense()} on the original assembly should result in a renumbering equivalent to what will eventually be written to an \code{ss} file by \code{ssio}, though this has not been exhaustively tested. Apart from the iOrder values and sequence, all particles from the assembly will be reflected faithfully in the written \code{ss} file.
+
+\subsubsection{\code{viz(assembly, resolution=10)}}
+Visualize an assembly of particles using \code{matplotlib}. The \code{resolution} argument determines how round or ``blocky" the particles appear, with higher values taking more time to render. Unfortunately, for $\gtrsim$ 1000 particles \code{viz()} becomes prohibitively slow. This is because \code{viz()} is essentially making a 3D scatter plot using \code{matplotlib}, which is not designed for so many inputs and cannot easily handle this number of points. Using a standard scatter plot instead of plotting spheres does not fix this issue. Ultimately, the solution would be to use something like \code{mayavi} or \code{plotly} to render the particles, but I compromised here in the interest of accessibility since \code{matplotlib} is so much more widely available. An additional problem is that \code{matplotlib} cannot currently set an equal or ``square" aspect ratio for 3D plots. As a workaround, \code{viz} determines the most extreme particle locations in $x$, $y$, and $z$ and sets an equal range for all 3 axes to accommodate the worst case scenario. This results in a tolerable aspect ratio for the visualization.
+
+
+\subsubsection{\code{join(*assemblies, units=`pkd')}}
+Combine an arbitrary number of existing assemblies into one new assembly. Particles in the new assembly are copies of those in the input assemblies. Any manipulations of the new assembly will not affect the originals. \pkd{} units are the default.
+
+\subsubsection{\code{subasbly(assembly, *iOrders, units=None)}}
+Returns a new assembly with only the input iOrders. List arguments must be unpacked using the * operator. By default, units will be preserved from the original assembly.
+
+\subsubsection{\code{embed\_boulder(assembly, center, radius, units=`pkd')}}
+Embed a spherical boulder in a rubble pile. The center argument is defined relative to the agg center of mass. This function is experimental and likely has some bugs to work out. Intended for a niche use case for JCM, but included here for the sake of completeness. Could be removed or offloaded elsewhere in the future.
+
+
+
+\subsection{Particle Methods}
+
+\subsubsection{\code{pos()}}
+Return particle position as a \pkd{} array.
+
+\subsubsection{\code{vel()}}
+Return particle velocity as a \code{numpy} array.
+
+\subsubsection{\code{spin()}}
+Return particle spin as a \code{numpy} array.
+
+\subsubsection{\code{set\_pos(pos, units=None)}}
+Set particle position with a 3-element vector-like input. \code{pos} may be a \code{numpy} array, a tuple, or a list. Units default to the particle's current units.
+
+\subsubsection{\code{set\_vel(vel, units=None)}}
+Set particle velocity with a 3-element vector-like input. \code{vel} may be a \code{numpy} array, a tuple, or a list. Units default to the particle's current units.
+
+\subsubsection{\code{set\_spin(w, units=None)}}
+Set particle velocity with a 3-element vector-like input. \code{w} may be a \code{numpy} array, a tuple, or a list. Units default to the particle's current units.
+
+\subsubsection{\code{copy()}}
+Returns a copy of the particle. Setting a new variable equal to an existing particle will not create a new, independent particle object.
+
+
+
+
+ 
+\subsection{Assembly Methods}
+
+
+\subsubsection{\code{N()}}
+Returns the number of particles in the assembly.
+
+\subsubsection{\code{M()}}
+Returns the total mass of the assembly.
+
+\subsubsection{\code{xbounds()}}
+Returns a \code{numpy} array containing the minimum and maximum x values across all particles in the assembly.
+
+\subsubsection{\code{ybounds()}}
+Returns a \code{numpy} array containing the minimum and maximum y values across all particles in the assembly.
+
+\subsubsection{\code{zbounds()}}
+Returns a \code{numpy} array containing the minimum and maximum z values across all particles in the assembly.
+
+\subsubsection{\code{com()}}
+Returns a \code{numpy} array containing the center of mass position of the assembly.
+
+\subsubsection{\code{comv()}}
+Returns a \code{numpy} array containing the center of mass velocity of the assembly.
+
+\subsubsection{\code{center()}}
+Returns a \code{numpy} array containing the mid-point of the assembly. In other words, the point located halfway between the extreme x, y, and z values. Note that this is not equivalent to the center of mass of the assembly.
+
+\subsubsection{\code{set\_com(com, units=None)}}
+Translate all particles so that the assembly has the specified center of mass position. \code{com} must be a 3-element \code{numpy} array, tuple, or list. Units will default to the current assembly setting.
+
+\subsubsection{\code{set\_comv(comv, units=None)}}
+Edit all particles so that the assembly has the new center of mass velocity. \code{comv} must be a 3-element \code{numpy} array, tuple, or list. Units will default to the current assembly setting.
+
+\subsubsection{\code{set\_center(center=(0,0,0), units=None)}}
+Translate all particles to match the desired center location (center is described above under \code{center()}). \code{comv} must be a 3-element \code{numpy} array, tuple, or list. Units will default to the current assembly setting.
+
+\subsubsection{\code{R()}}
+Return the assembly ``radius." This method will return a value regardless of whether the assembly is a single rubble pile or not. The radius is defined here to be the greatest possible distance between the center of mass of the assembly and any single particle plus that particle's radius.
+
+\subsubsection{\code{vol()}}
+Calculate the volume occupied by particles in the assembly.  This method will return a value regardless of whether the assembly is a single rubble pile or not. \code{vol()} uses a simplistic convex hull method and could probably be improved. Clearly, usefulness and accuracy will depend on the inputs.
+
+
+\subsubsection{\code{avg\_dens()}}
+Return the average particle density over all particles in the assembly.
+
+\subsubsection{\code{bulk\_dens()}}
+Return the bulk density of the assembly. Relies on \code{vol()}, and so suffers from the same pitfalls.
+
+\subsubsection{\code{I()}}
+Return the inertia tensor of the assembly as a \code{numpy} array.
+
+\subsubsection{\code{axes()}}
+Return the principal axes of the assembly as a \code{numpy} array.
+
+\subsubsection{\code{L()}}
+Return the angular momentum vector of the assembly. (Untested)
+
+\subsubsection{\code{show\_particles()}}
+Prints all particles in the assembly. Largely redundant with \code{print(<assembly>)}.
+
+\subsubsection{\code{add\_particles(*particles)}}
+Add copies of an arbitrary number of particles to the assembly. Future manipulations of the assembly will not affect the original particles that were added. As in the case of assembly, this method takes each particle to be added as an argument, rather than a list of particles. Use the * operator to add a list of particles.
+
+\subsubsection{\code{get\_particle(iOrder)}}
+Returns a copy of the first particle in the assembly with an iOrder matching the value passed in. To edit the actual particle in the assembly, use list slicing. E.g. \code{<assembly>[0].m = 100}. Currently, this method can only accept a single iOrder value at a time.
+
+\subsubsection{\code{del\_particles(*iOrders)}}
+Deletes all particles with iOrder values matching any in \code{iOrders} from the assembly. Any list arguments containing the iOrder values must be unpacked with the * operator. \textbf{Use caution when combining \code{del\_particles()} with loops. Deleting particles from an assembly while iterating over its particles is equivalent to removing elements of a list while looping through it and can lead to unexpected behavior.}
+
+\subsubsection{\code{copy()}}
+Returns an independent copy of the assembly.
+
+\subsubsection{\code{sort\_iOrder(direction=`a')}}
+Sorts the assembly by iOrder. Optional \code{direction} argument allows sorting in ascending \code{`a'} or descending \code{`d'} order. The default is ascending.
+
+\subsubsection{\code{sort\_iOrgIdx(direction=`d')}}
+Sorts the assembly by iOrgIdx. Optional \code{direction} argument allows sorting in ascending \code{`a'} or descending \code{`d'} order. The default is descending.
+
+\subsubsection{\code{condense(direction=`a')}}
+Renumbers iOrder values consecutively, in either ascending \code{`a'} or descending \code{`d'} order. There are no guarantees on which particles will get which iOrder value, just that the particles will be unchanged and the iOrder values will be consecutive beginning with zero (or the largest iOrder value if the descending option is chosen).
+
+\subsubsection{\code{rotate(axis, angle)}}
+Rotate the entire assembly by \code{angle} about \code{axis}. Both arguments must be non-zero. \textbf{Note: currently, the reference point for the rotation is about the origin.} To rotate the assembly in place, relocate the center or center of mass to zero, rotate, and move the assembly back. This behavior may change in the future.
+
+\subsection{Aggregate Methods}
+
+While there is no formal distinction between aggs and assemblies in \code{ssedit}, there are several assembly methods that are intended for use with aggs.
+
+\subsubsection{\code{agg\_max()}}
+Return the largest (negative) iOrgIdx value in the assembly.
+
+\subsubsection{\code{agg\_min()}}
+Return the smallest (negative) iOrgIdx value in the assembly.
+
+\subsubsection{\code{agg\_range()}}
+Returns a tuple with the minimum and maximum iOrgIdx values in the assembly.
+
+\subsubsection{\code{agg\_list()}}
+Return a list of all iOrgIdx values in the assembly.
+
+\subsubsection{\code{N\_aggs()}}
+Return the number of aggs in the assembly.
+
+\subsubsection{\code{get\_agg(iOrgIdx)}}
+Return a new assembly consisting only of particles in the desired aggregate. Any particles in the new assembly are copies of the originals, and any manipulations should not affect original assembly. Currently, this method can only accept a single iOrgIdx value at once.
+
+\subsubsection{\code{del\_agg(iOrgIdx)}}
+Delete any particles with a matching iOrgIdx value from the assembly. Currently, this method can only accept a single iOrgIdx value at once.
+
+\subsubsection{\code{pop\_agg(iOrgIdx)}}
+Delete the agg from the assembly and return a copy of it. Currently, this method can only accept a single iOrgIdx value at once.
+
+\subsubsection{\code{fix\_orphans()}}
+Find any single particles with a negative iOrgIdx value (``orphans") and set their iOrgIdx value equal to their iOrder value.
+
+
+
+
+\subsection{Functions for Generating Regular Aggregates}
+
+\code{ssedit} includes a set of functions for generating the 5 standard \pkd{} aggregate shapes included in \code{ssgen2Agg}. These functions generally work, but are a work in progress and may have some bugs or be updated in the future. Each function has a large number of possible arguments. While all arguments are optional individually, at a minimum the user must specify a mass and radius, or a particle mass and particle radius. The \code{mass} and \code{radius} arguments set a total mass and overall radius for the entire aggregate, while the \code{pmass} and \code{pradius} arguments define the mass and size of each constituent particle. An orientation may be specified, but the angle about the orientation axis cannot currently be set. For example, calling \code{make\_diamond()} with a \code{orientation} set to (0,1,0) will align the long axis of the diamond with the y-axis, but no guarantees are made as to the orientation of the short axes. In the future, these functions could be split off into their own utility since they aren't really core functions. Some things here may need to be reconciled with \code{ssgen2Agg}.
+
+
+\subsubsection{\code{make\_db(iOrder=0, iOrgIdx=-1, mass=0, radius=0, center=(0,0,0), \\
+orientation=(0,0,1), color=2, pmass=0, pradius=0, sep\_coeff=np.sqrt(3), units=`pkd')}}
+Generate an assembly consisting of a single 2-particle, dumbbell-shaped aggregate. The user may specify a mass and radius for the whole agg, or alternately for the particles in the agg by using the \code{pmass} and \code{pradius} arguments in lieu of the \code{mass} and \code{radius} arguments. 
+
+\subsubsection{\code{make\_diamond(iOrder=0, iOrgIdx=-1, mass=0, radius=0, center=(0,0,0), \\
+orientation=(0,0,1), color=12, pmass=0, pradius=0, sep\_coeff=np.sqrt(3), units=`pkd')}}
+Generate an assembly consisting of a single 4-particle, planar diamond-shaped aggregate.
+
+\subsubsection{\code{make\_tetra(iOrder=0, iOrgIdx=-1, mass=0, radius=0, center=(0,0,0), \\
+orientation=(0,0,1), color=3, pmass=0, pradius=0, sep\_coeff=np.sqrt(3), units=`pkd')}}
+Generate an assembly consisting of a single 4-particle, tetrahedron-shaped aggregate.
+
+\subsubsection{\code{make\_rod(iOrder=0, iOrgIdx=-1, mass=0, radius=0, center=(0,0,0), \\
+orientation=(0,0,1), color=5, pmass=0, pradius=0, sep\_coeff=np.sqrt(3), units=`pkd')}}
+Generate an assembly consisting of a single 4-particle, rod-shaped aggregate.
+
+\subsubsection{\code{make\_cube(iOrder=0, iOrgIdx=-1, mass=0, radius=0, center=(0,0,0), \\
+orientation=(0,0,1), color=7, pmass=0, pradius=0, sep\_coeff=np.sqrt(3), units=`pkd')}}
+Generate an assembly consisting of a single 8-particle, cube-shaped aggregate.
+
+
+\subsection{Functions and Methods for Internal Use}
+
+\code{ssedit} includes a number of functions and methods that are not intended to be called by the end user. These should probably be set aside or organized separately in the code, but they are not currently. They are cataloged here for the benefit of anyone making changes to \code{ssedit} in the future. 
+
+\subsubsection{\code{iOrder\_key(particle)}}
+A key function used by the \code{sort\_iOrder()} method. Returns the particle's iOrder value.
+
+\subsubsection{\code{iOrgIdx\_key(particle)}}
+A key function used by the \code{sort\_iOrgIdx()} method. Returns the particle's iOrgIdx value.
+
+\subsubsection{\code{color\_translate(pkd\_color)}}
+A single-use utility for converting \pkd{} numeric color codes to \code{matplotlib} colors in \code{viz()}.
+
+\subsubsection{\code{vector\_rotate(vector, axis, angle)}}
+A function for to perform a general rotation on a vector. Returns the rotated vector and leaves the original vector unaltered. This implementation was largely copied from \code{ssgen2Agg}. This function is used by the \code{rotate()} assembly method.
+
+\subsubsection{\code{angle\_between(v1, v2)}}
+Return the angle between two vectors. Used when setting the orientation of generated regular aggs. There could be some funny issues here relating to the domain of \code{np.arccos} which JCM has not looked into very carefully. The current implementation was copied from a Stack Overflow post, which is linked in the \code{ssedit.py} comments.
+
+\subsubsection{\code{makesphere(x, y, z, radius, resolution=10)}}
+Return the coordinates for plotting a ``sphere" centered at \code{(x, y, z)}, though really it produces a sphere-like polyhedron. Increasing \code{resolution} increases the number of faces, giving a rounder look but increases time the time to render. Copied from a Stack Overflow post, which is linked in the \code{ssedit.py} comments. This function is used by \code{viz()} for plotting spheres instead of scatter plot markers. 
+
+
+\subsubsection{\code{convert(value=`pkd')}}
+A particle method that changes particle units to \code{value}. Intended for internal \code{ssedit} use. This function gets called when the particle \code{units} attribute is updated. Users should always change particle units by setting the units attribute to the desired units.
+
+\bigskip\bigskip
+
+\noindent The following six functions are called by the \code{convert()} particle method to handle unit conversions. Each function scales the input particle's attributes appropriately and returns nothing. These functions in turn make use of a series of constants defined in \code{ssedit.py} (sourced from various locations around the internet) that encode the actual conversion factors. Derek has pointed out that these constants may not match exactly with the constants used in \pkd{} or other existing utilies, which may cause small discrepancies to creep in. This should be investigated and reconciled.
+
+\subsubsection{\code{pkd2cgs(particle)}}
+
+\subsubsection{\code{cgs2pkd(particle)}}
+
+\subsubsection{\code{pkd2mks(particle)}}
+
+\subsubsection{\code{mks2pkd(particle)}}
+
+\subsubsection{\code{mks2cgs(particle)}}
+
+\subsubsection{\code{cgs2mks(particle)}}
+
+
+
+
+
+\end{document}
